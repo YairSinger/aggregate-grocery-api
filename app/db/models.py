@@ -106,6 +106,7 @@ class AggregateItem(Base):
     item_id = Column(UUID(as_uuid=True), ForeignKey("items.id"), nullable=False)
     
     aggregate = relationship("Aggregate", back_populates="items")
+    item = relationship("Item")
     
     # Ensures a user cannot have the same item in multiple aggregates
     # Note: Complex constraint, better handled in app logic or via user_id lookup

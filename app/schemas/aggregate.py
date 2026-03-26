@@ -2,6 +2,7 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 from app.db.models import UnitOfMeasure
+from app.schemas.item import Item
 
 class AggregateItemBase(BaseModel):
     item_id: UUID
@@ -12,6 +13,7 @@ class AggregateItemCreate(AggregateItemBase):
 class AggregateItem(AggregateItemBase):
     id: UUID
     aggregate_id: UUID
+    item: Item
     model_config = ConfigDict(from_attributes=True)
 
 class AggregateBase(BaseModel):
