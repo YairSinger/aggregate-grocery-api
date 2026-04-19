@@ -42,10 +42,20 @@ export const api = {
   },
   aggregates: {
     list: (email: string) => fetchApi("/aggregates/", { email }),
+    get: (email: string, id: string) => fetchApi(`/aggregates/${id}`, { email }),
     create: (email: string, data: any) => fetchApi("/aggregates/", {
       email,
       method: "POST",
       body: JSON.stringify(data),
+    }),
+    update: (email: string, id: string, data: any) => fetchApi(`/aggregates/${id}`, {
+      email,
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+    delete: (email: string, id: string) => fetchApi(`/aggregates/${id}`, {
+      email,
+      method: "DELETE",
     }),
   },
   shoppingLists: {
