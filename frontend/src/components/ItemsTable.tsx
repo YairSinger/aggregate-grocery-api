@@ -4,21 +4,20 @@ import { useState, useEffect, useCallback } from 'react';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8030/api/v1';
 
-interface ItemRow {
-  id: string;
+interface PriceRow {
+  item_code: string;
   name: string;
   brand: string | null;
   category: string | null;
   unit_of_measure: string;
   quantity: number;
-  min_price: number | null;
-  max_price: number | null;
+  chain: string;
+  store: string;
+  price: number;
   price_per_unit: number | null;
-  best_chain: string | null;
-  store_count: number;
 }
 
-type SortKey = 'name' | 'brand' | 'category' | 'min_price' | 'price_per_unit' | 'store_count';
+type SortKey = 'name' | 'brand' | 'category' | 'chain' | 'store' | 'price' | 'price_per_unit';
 
 const UNIT_LABEL: Record<string, string> = {
   MASS: 'ק"ג',
@@ -29,7 +28,7 @@ const UNIT_LABEL: Record<string, string> = {
 const PAGE_SIZE = 100;
 
 export default function ItemsTable() {
-  const [items, setItems] = useState<ItemRow[]>([]);
+  const [rows, setRows] = useState<PriceRow[]>([]);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('name');
@@ -38,7 +37,6 @@ export default function ItemsTable() {
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
-  // Debounce search
   useEffect(() => {
     const t = setTimeout(() => {
       setDebouncedSearch(search);
@@ -47,7 +45,7 @@ export default function ItemsTable() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const fetchItems = useCallback(async () => {
+  const fetchRows = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -57,9 +55,9 @@ export default function ItemsTable() {
         offset: String(offset),
       });
       if (debouncedSearch) params.set('q', debouncedSearch);
-      const res = await fetch(`${API}/items/?${params}`);
-      const data: ItemRow[] = await res.json();
-      setItems(data);
+      const res = await fetch(`${API}/items/prices/?${params}`);
+      const data: PriceRow[] = await res.json();
+      setRows(data);
       setHasMore(data.length === PAGE_SIZE);
     } catch (e) {
       console.error(e);
@@ -68,7 +66,7 @@ export default function ItemsTable() {
     }
   }, [sortBy, sortDir, offset, debouncedSearch]);
 
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  useEffect(() => { fetchRows(); }, [fetchRows]);
 
   const handleSort = (col: SortKey) => {
     if (col === sortBy) {
@@ -82,19 +80,27 @@ export default function ItemsTable() {
 
   const arrow = (col: SortKey) => sortBy === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
 
-  const fmt = (n: number | null, digits = 2) =>
-    n == null ? '—' : `₪${n.toFixed(digits)}`;
-
-  const fmtUnit = (row: ItemRow) => {
+  const fmtUnit = (row: PriceRow) => {
     if (row.price_per_unit == null) return '—';
     const unit = UNIT_LABEL[row.unit_of_measure] ?? row.unit_of_measure;
     return `₪${row.price_per_unit.toFixed(2)} / ${unit}`;
   };
 
+  const cols: [SortKey | null, string][] = [
+    ['name',           'מוצר'],
+    ['brand',          'מותג'],
+    ['category',       'קטגוריה'],
+    [null,             'כמות'],
+    ['chain',          'רשת'],
+    ['store',          'סניף'],
+    ['price',          'מחיר'],
+    ['price_per_unit', 'מחיר מנורמל'],
+  ];
+
   return (
     <section className="card" style={{ padding: '1.5rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-        <h2 style={{ margin: 0 }}>כל המוצרים</h2>
+        <h2 style={{ margin: 0 }}>מחירים לפי חנות</h2>
         <input
           type="search"
           placeholder="חיפוש לפי שם, מותג, קטגוריה..."
@@ -116,16 +122,7 @@ export default function ItemsTable() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--card-bg)' }}>
-              {([
-                ['name',        'מוצר'],
-                ['brand',       'מותג'],
-                ['category',    'קטגוריה'],
-                [null,          'כמות'],
-                ['min_price',   'מחיר מינימום'],
-                ['price_per_unit', 'מחיר מנורמל'],
-                [null,          'רשת זולה'],
-                ['store_count', 'חנויות'],
-              ] as [SortKey | null, string][]).map(([col, label]) => (
+              {cols.map(([col, label]) => (
                 <th
                   key={label}
                   onClick={col ? () => handleSort(col) : undefined}
@@ -145,43 +142,38 @@ export default function ItemsTable() {
             </tr>
           </thead>
           <tbody>
-            {loading && items.length === 0 ? (
+            {loading && rows.length === 0 ? (
               <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'var(--secondary)' }}>טוען...</td></tr>
-            ) : items.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'var(--secondary)' }}>לא נמצאו מוצרים</td></tr>
-            ) : items.map((item, i) => (
+            ) : rows.length === 0 ? (
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'var(--secondary)' }}>לא נמצאו תוצאות</td></tr>
+            ) : rows.map((row, i) => (
               <tr
-                key={item.id}
+                key={`${row.item_code}-${row.chain}-${row.store}`}
                 style={{
                   borderBottom: '1px solid var(--border)',
                   background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
                 }}
               >
-                <td style={{ padding: '0.55rem 0.8rem', fontWeight: 500 }}>{item.name}</td>
-                <td style={{ padding: '0.55rem 0.8rem', color: 'var(--secondary)' }}>{item.brand ?? '—'}</td>
-                <td style={{ padding: '0.55rem 0.8rem', color: 'var(--secondary)' }}>{item.category ?? '—'}</td>
+                <td style={{ padding: '0.55rem 0.8rem', fontWeight: 500 }}>{row.name}</td>
+                <td style={{ padding: '0.55rem 0.8rem', color: 'var(--secondary)' }}>{row.brand ?? '—'}</td>
+                <td style={{ padding: '0.55rem 0.8rem', color: 'var(--secondary)' }}>{row.category ?? '—'}</td>
                 <td style={{ padding: '0.55rem 0.8rem', textAlign: 'center' }}>
-                  {item.quantity} {UNIT_LABEL[item.unit_of_measure] ?? item.unit_of_measure}
+                  {row.quantity} {UNIT_LABEL[row.unit_of_measure] ?? row.unit_of_measure}
                 </td>
+                <td style={{ padding: '0.55rem 0.8rem' }}>
+                  <span style={{
+                    background: 'rgba(99,102,241,0.15)',
+                    color: 'var(--primary)',
+                    borderRadius: '4px',
+                    padding: '0.2rem 0.5rem',
+                    fontSize: '0.8rem',
+                  }}>{row.chain}</span>
+                </td>
+                <td style={{ padding: '0.55rem 0.8rem', color: 'var(--secondary)', fontSize: '0.8rem' }}>{row.store}</td>
                 <td style={{ padding: '0.55rem 0.8rem', textAlign: 'center', fontWeight: 600, color: 'var(--primary)' }}>
-                  {fmt(item.min_price)}
-                  {item.max_price != null && item.max_price !== item.min_price && (
-                    <span style={{ color: 'var(--secondary)', fontWeight: 400 }}> – {fmt(item.max_price)}</span>
-                  )}
+                  ₪{row.price.toFixed(2)}
                 </td>
-                <td style={{ padding: '0.55rem 0.8rem', textAlign: 'center' }}>{fmtUnit(item)}</td>
-                <td style={{ padding: '0.55rem 0.8rem', textAlign: 'center' }}>
-                  {item.best_chain ? (
-                    <span style={{
-                      background: 'rgba(99,102,241,0.15)',
-                      color: 'var(--primary)',
-                      borderRadius: '4px',
-                      padding: '0.2rem 0.5rem',
-                      fontSize: '0.8rem',
-                    }}>{item.best_chain}</span>
-                  ) : '—'}
-                </td>
-                <td style={{ padding: '0.55rem 0.8rem', textAlign: 'center', color: 'var(--secondary)' }}>{item.store_count}</td>
+                <td style={{ padding: '0.55rem 0.8rem', textAlign: 'center' }}>{fmtUnit(row)}</td>
               </tr>
             ))}
           </tbody>
@@ -190,7 +182,7 @@ export default function ItemsTable() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
         <span style={{ color: 'var(--secondary)', fontSize: '0.85rem' }}>
-          {loading ? 'טוען...' : `מציג ${items.length} מוצרים`}
+          {loading ? 'טוען...' : `מציג ${rows.length} שורות`}
         </span>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button

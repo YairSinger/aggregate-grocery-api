@@ -28,6 +28,83 @@ class ItemRow(BaseModel):
         from_attributes = True
 
 
+class PriceRow(BaseModel):
+    item_code: str
+    name: str
+    brand: Optional[str] = None
+    category: Optional[str] = None
+    unit_of_measure: str
+    quantity: float
+    chain: str
+    store: str
+    price: float
+    price_per_unit: Optional[float] = None
+
+
+@router.get("/prices/", response_model=List[PriceRow])
+def list_prices(
+    db: Session = Depends(get_db),
+    q: Optional[str] = None,
+    sort_by: str = "name",
+    sort_dir: str = "asc",
+    limit: int = Query(default=100, le=500),
+    offset: int = 0,
+) -> Any:
+    """Flat list: one row per (item, store, price)."""
+    query = (
+        db.query(
+            Item.item_code,
+            Item.name,
+            Item.brand,
+            Item.category,
+            Item.unit_of_measure,
+            Item.quantity,
+            Chain.name.label("chain"),
+            Store.name.label("store"),
+            Price.effective_price,
+            Price.price_per_unit,
+        )
+        .join(Price, Price.item_id == Item.id)
+        .join(Store, Store.id == Price.store_id)
+        .join(Chain, Chain.id == Store.chain_id)
+    )
+
+    if q:
+        term = f"%{q}%"
+        query = query.filter(
+            or_(Item.name.ilike(term), Item.brand.ilike(term), Item.category.ilike(term))
+        )
+
+    sort_col = {
+        "name": Item.name,
+        "brand": Item.brand,
+        "category": Item.category,
+        "chain": Chain.name,
+        "store": Store.name,
+        "price": Price.effective_price,
+        "price_per_unit": Price.price_per_unit,
+    }.get(sort_by, Item.name)
+
+    query = query.order_by(sort_col.desc() if sort_dir == "desc" else sort_col.asc())
+    rows = query.offset(offset).limit(limit).all()
+
+    return [
+        PriceRow(
+            item_code=item_code,
+            name=name,
+            brand=brand,
+            category=category,
+            unit_of_measure=uom.value,
+            quantity=quantity,
+            chain=chain,
+            store=store,
+            price=float(price),
+            price_per_unit=float(ppu) if ppu is not None else None,
+        )
+        for item_code, name, brand, category, uom, quantity, chain, store, price, ppu in rows
+    ]
+
+
 @router.get("/", response_model=List[ItemRow])
 def list_items(
     db: Session = Depends(get_db),
@@ -38,7 +115,6 @@ def list_items(
     offset: int = 0,
 ) -> Any:
     """List items with aggregated price info across stores."""
-    # Subquery: min/max price and store count per item
     price_agg = (
         db.query(
             Price.item_id,
@@ -51,7 +127,6 @@ def list_items(
         .subquery()
     )
 
-    # Subquery: chain name for the cheapest price
     best_chain_sub = (
         db.query(
             Price.item_id,
@@ -93,7 +168,6 @@ def list_items(
     }.get(sort_by, Item.name)
 
     query = query.order_by(sort_col.desc() if sort_dir == "desc" else sort_col.asc())
-
     rows = query.offset(offset).limit(limit).all()
 
     return [
