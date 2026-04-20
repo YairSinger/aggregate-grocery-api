@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import Auth from '../components/Auth';
 import AggregatorManager from '../components/AggregatorManager';
 import ItemsTable from '../components/ItemsTable';
+import CartOptimizer from '../components/CartOptimizer';
 
 type Tab = 'aggregates' | 'items' | 'cart';
 
@@ -89,21 +90,7 @@ export default function Home() {
 
       {tab === 'aggregates' && <AggregatorManager email={email} onUpdate={refreshData} />}
 
-      {tab === 'cart' && (
-        <section className="card">
-          <h2>סל קניות אופטימלי</h2>
-          <p style={{ marginTop: '1rem', color: 'var(--secondary)' }}>
-            יש לך {aggregatesCount} קבוצות מוצרים מוגדרות.
-            בשלב הבא תוכל לבחור קבוצות ולחשב את הסל האופטימלי.
-          </p>
-          <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
-            <button className="button" disabled={aggregatesCount === 0} onClick={() => setTab('aggregates')}>
-              {aggregatesCount === 0 ? 'הוסף קבוצות מוצרים תחילה' : 'עבור לתכנון רשימת קניות'}
-            </button>
-            <button className="button-outline" onClick={refreshData}>רענן נתונים</button>
-          </div>
-        </section>
-      )}
+      {tab === 'cart' && <CartOptimizer email={email} />}
     </main>
   );
 }
