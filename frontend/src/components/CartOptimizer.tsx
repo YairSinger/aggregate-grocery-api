@@ -10,6 +10,19 @@ interface Aggregate {
   unit_of_measure: string;
 }
 
+interface ShoppingListEntry {
+  id: string;
+  aggregate_id: string;
+  desired_amount: number;
+}
+
+interface ShoppingList {
+  id: string;
+  name: string;
+  created_at: string;
+  entries: ShoppingListEntry[];
+}
+
 interface ItemResult {
   aggregate_id: string;
   aggregate_name: string;
@@ -28,10 +41,17 @@ interface StoreResult {
   total_cost: number;
 }
 
+interface AlternativeStore {
+  store_name: string;
+  chain_name: string;
+  total_cost: number;
+}
+
 interface OptimizationResult {
   selected_stores: StoreResult[];
   total_basket_cost: number;
   total_savings: number;
+  alternatives: AlternativeStore[];
 }
 
 const UNIT_LABEL: Record<string, string> = {
@@ -42,6 +62,9 @@ const UNIT_LABEL: Record<string, string> = {
 
 export default function CartOptimizer({ email }: { email: string }) {
   const [aggregates, setAggregates] = useState<Aggregate[]>([]);
+  const [recentLists, setRecentLists] = useState<ShoppingList[]>([]);
+  const [loadedListName, setLoadedListName] = useState('');
+  const [showRecentLists, setShowRecentLists] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [maxStores, setMaxStores] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -49,8 +72,27 @@ export default function CartOptimizer({ email }: { email: string }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.aggregates.list(email).then(setAggregates).catch(console.error);
+    Promise.all([
+      api.aggregates.list(email),
+      api.shoppingLists.list(email),
+    ]).then(([aggs, lists]) => {
+      setAggregates(aggs);
+      const sorted = [...lists].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      setRecentLists(sorted.slice(0, 5));
+      if (sorted.length > 0) applyList(sorted[0]);
+    }).catch(console.error);
   }, [email]);
+
+  const applyList = (list: ShoppingList) => {
+    const q: Record<string, string> = {};
+    for (const entry of list.entries) {
+      q[entry.aggregate_id] = String(entry.desired_amount);
+    }
+    setQuantities(q);
+    setLoadedListName(list.name);
+  };
 
   const selectedAggregates = aggregates.filter(a => {
     const q = parseFloat(quantities[a.id] || '0');
@@ -79,6 +121,14 @@ export default function CartOptimizer({ email }: { email: string }) {
         max_stores: maxStores,
       });
       setResult(opt);
+
+      // Refresh recent lists
+      api.shoppingLists.list(email).then(lists => {
+        const sorted = [...lists].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        setRecentLists(sorted.slice(0, 5));
+      });
     } catch (err: any) {
       setError(err.message || 'שגיאה בחישוב הסל');
     } finally {
@@ -97,10 +147,76 @@ export default function CartOptimizer({ email }: { email: string }) {
     );
   }
 
+  const bestStoreName = result?.selected_stores[0]
+    ? `${result.selected_stores[0].store_name}`
+    : '';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       <section className="card">
-        <h2 style={{ marginBottom: '1rem' }}>בחר כמויות לרשימת הקניות</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+          <h2>בחר כמויות לרשימת הקניות</h2>
+          {recentLists.length > 0 && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowRecentLists(v => !v)}
+                style={{
+                  padding: '0.4rem 0.9rem', borderRadius: '6px', border: '1px solid var(--border)',
+                  background: 'var(--card-bg)', color: 'var(--secondary)', fontSize: '0.85rem', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '0.4rem',
+                }}
+              >
+                רשימות אחרונות ▾
+              </button>
+              {showRecentLists && (
+                <div style={{
+                  position: 'absolute', left: 0, top: '110%', zIndex: 10,
+                  background: 'var(--card-bg)', border: '1px solid var(--border)',
+                  borderRadius: '8px', minWidth: '220px', boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                  overflow: 'hidden',
+                }}>
+                  {recentLists.map(list => (
+                    <button
+                      key={list.id}
+                      onClick={() => { applyList(list); setShowRecentLists(false); }}
+                      style={{
+                        display: 'block', width: '100%', padding: '0.65rem 1rem',
+                        textAlign: 'right', background: 'none', border: 'none',
+                        cursor: 'pointer', borderBottom: '1px solid var(--border)',
+                        color: 'var(--foreground)', fontSize: '0.88rem',
+                      }}
+                      onMouseOver={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.07)')}
+                      onMouseOut={e => (e.currentTarget.style.background = 'none')}
+                    >
+                      <div style={{ fontWeight: 500 }}>{list.name}</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>
+                        {new Date(list.created_at).toLocaleDateString('he-IL')}
+                        {' · '}{list.entries.length} פריטים
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {loadedListName && (
+          <div style={{
+            marginBottom: '0.75rem', padding: '0.4rem 0.8rem',
+            background: 'rgba(99,102,241,0.08)', borderRadius: '6px',
+            fontSize: '0.83rem', color: 'var(--secondary)', display: 'flex', alignItems: 'center', gap: '0.5rem',
+          }}>
+            <span>טעינה מ:</span>
+            <span style={{ fontWeight: 500, color: 'var(--primary)' }}>{loadedListName}</span>
+            <button
+              onClick={() => { setQuantities({}); setLoadedListName(''); }}
+              style={{ marginRight: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--secondary)', fontSize: '0.8rem' }}
+            >
+              ✕ נקה
+            </button>
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
           {aggregates.map(agg => (
@@ -168,15 +284,47 @@ export default function CartOptimizer({ email }: { email: string }) {
 
       {result && (
         <section className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-            <h2>תוצאות</h2>
-            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--primary)' }}>
-              סה"כ: ₪{Number(result.total_basket_cost).toFixed(2)}
+          {/* Savings banner */}
+          <div style={{ marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--primary)' }}>
+                ₪{Number(result.total_basket_cost).toFixed(2)}
+              </span>
+              <span style={{ fontSize: '1rem', fontWeight: 600 }}>ב{bestStoreName}</span>
             </div>
+
+            {result.alternatives && result.alternatives.length > 0 && (
+              <div style={{ marginTop: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', fontSize: '0.9rem', color: 'var(--secondary)' }}>
+                <span>במקום</span>
+                {result.alternatives.map((alt, i) => {
+                  const diff = alt.total_cost - result.total_basket_cost;
+                  const pct = ((diff / result.total_basket_cost) * 100).toFixed(1);
+                  return (
+                    <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>₪{Number(alt.total_cost).toFixed(2)}</span>
+                      <span style={{
+                        fontSize: '0.78rem', background: 'rgba(239,68,68,0.1)',
+                        color: '#ef4444', borderRadius: '4px', padding: '0.1rem 0.35rem', fontWeight: 600,
+                      }}>+{pct}%</span>
+                      <span>ב{alt.store_name}</span>
+                      {i < result.alternatives.length - 1 && <span style={{ color: 'var(--border)' }}>·</span>}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
+            {result.total_savings > 0 && (
+              <div style={{ marginTop: '0.35rem', fontSize: '0.88rem', color: '#22c55e', fontWeight: 500 }}>
+                חיסכון של ₪{Number(result.total_savings).toFixed(2)} לעומת האפשרות הזולה הבאה
+              </div>
+            )}
           </div>
 
+          <h2 style={{ marginBottom: '1rem', fontSize: '1rem', color: 'var(--secondary)', fontWeight: 600 }}>פירוט לפי חנות</h2>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {result.selected_stores.map((store, i) => (
+            {result.selected_stores.map((store) => (
               <div key={store.store_id} style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
                 <div style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -197,7 +345,7 @@ export default function CartOptimizer({ email }: { email: string }) {
                       <th style={{ padding: '0.5rem 1rem', textAlign: 'right', color: 'var(--secondary)', fontWeight: 600 }}>קבוצה</th>
                       <th style={{ padding: '0.5rem 1rem', textAlign: 'right', color: 'var(--secondary)', fontWeight: 600 }}>מוצר זול ביותר</th>
                       <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600 }}>מחיר ליחידה</th>
-                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600 }}>כמות</th>
+                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600 }}>יחידות</th>
                       <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600 }}>עלות</th>
                     </tr>
                   </thead>
@@ -206,7 +354,7 @@ export default function CartOptimizer({ email }: { email: string }) {
                       <tr key={item.aggregate_id} style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={{ padding: '0.55rem 1rem', fontWeight: 500 }}>{item.aggregate_name}</td>
                         <td style={{ padding: '0.55rem 1rem', color: 'var(--secondary)' }}>{item.item_name}</td>
-                        <td style={{ padding: '0.55rem 1rem', textAlign: 'center' }}>₪{item.price_per_unit.toFixed(3)}</td>
+                        <td style={{ padding: '0.55rem 1rem', textAlign: 'center' }}>₪{item.price_per_unit.toFixed(2)}</td>
                         <td style={{ padding: '0.55rem 1rem', textAlign: 'center' }}>{item.desired_amount}</td>
                         <td style={{ padding: '0.55rem 1rem', textAlign: 'center', fontWeight: 600, color: 'var(--primary)' }}>₪{item.cost.toFixed(2)}</td>
                       </tr>
