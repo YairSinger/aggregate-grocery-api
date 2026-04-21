@@ -49,7 +49,12 @@ class DataProcessor:
             #   UNITS  → ₪/unit  (normalized_quantity is the item count)
             qty = Decimal(str(item["normalized_quantity"] or "1.0"))
             price_per_unit = effective_price / qty if qty > 0 else effective_price
-            
+
+            # Skip clearly bad items (e.g. normalization produced near-zero qty)
+            MAX_PRICE_PER_UNIT = Decimal("99999999")
+            if price_per_unit > MAX_PRICE_PER_UNIT or effective_price <= 0:
+                continue
+
             processed_data.append({
                 "item": {
                     "chain_id": chain_id,
