@@ -61,7 +61,12 @@ def save_data(db: Session, processed_data: List[Dict], store_id: int, chain_id: 
         if not item:
             item = Item(**data["item"])
             db.add(item)
-            db.flush() 
+            db.flush()
+        else:
+            # Always refresh mutable item fields so pipeline re-runs fix stale data
+            for field in ("name", "brand", "category", "unit_of_measure", "quantity"):
+                if field in data["item"]:
+                    setattr(item, field, data["item"][field])
 
         # 2. Handle Price
         price = db.query(Price).filter(

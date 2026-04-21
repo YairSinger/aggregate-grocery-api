@@ -25,6 +25,30 @@ const UNIT_LABEL: Record<string, string> = {
   UNITS: 'יח׳',
 };
 
+// price_per_unit from backend is always in canonical base units:
+//   MASS   → ₪/kg
+//   VOLUME → ₪/litre
+//   UNITS  → ₪/unit
+const PRICE_UNIT_LABEL: Record<string, string> = {
+  MASS:   'ק"ג',
+  VOLUME: 'ל׳',
+  UNITS:  'יח׳',
+};
+
+// quantity in DB is in base units (kg / litre / count).
+// Convert to a human-friendly string: grams under 1 kg, ml under 1 L.
+function fmtQty(quantity: number, unit: string): string {
+  if (unit === 'MASS') {
+    if (quantity < 1) return `${Math.round(quantity * 1000)} גרם`;
+    return `${quantity} ק"ג`;
+  }
+  if (unit === 'VOLUME') {
+    if (quantity < 1) return `${Math.round(quantity * 1000)} מ"ל`;
+    return `${quantity} ל׳`;
+  }
+  return `${quantity} יח׳`;
+}
+
 const PAGE_SIZE = 100;
 
 export default function ItemsTable() {
@@ -82,8 +106,8 @@ export default function ItemsTable() {
 
   const fmtUnit = (row: PriceRow) => {
     if (row.price_per_unit == null) return '—';
-    const unit = UNIT_LABEL[row.unit_of_measure] ?? row.unit_of_measure;
-    return `₪${row.price_per_unit.toFixed(2)} / ${unit}`;
+    const label = PRICE_UNIT_LABEL[row.unit_of_measure] ?? row.unit_of_measure;
+    return `₪${row.price_per_unit.toFixed(2)} / ${label}`;
   };
 
   const cols: [SortKey | null, string][] = [
@@ -158,7 +182,7 @@ export default function ItemsTable() {
                 <td style={{ padding: '0.55rem 0.8rem', color: 'var(--secondary)' }}>{row.brand ?? '—'}</td>
                 <td style={{ padding: '0.55rem 0.8rem', color: 'var(--secondary)' }}>{row.category ?? '—'}</td>
                 <td style={{ padding: '0.55rem 0.8rem', textAlign: 'center' }}>
-                  {row.quantity} {UNIT_LABEL[row.unit_of_measure] ?? row.unit_of_measure}
+                  {fmtQty(row.quantity, row.unit_of_measure)}
                 </td>
                 <td style={{ padding: '0.55rem 0.8rem' }}>
                   <span style={{
