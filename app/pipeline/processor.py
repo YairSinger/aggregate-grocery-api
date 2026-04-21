@@ -43,7 +43,10 @@ class DataProcessor:
                 except:
                     pass
             
-            # Calculate price per base unit (KG, L, Unit)
+            # price_per_unit is in canonical base units:
+            #   MASS   → ₪/kg   (normalized_quantity is in kg)
+            #   VOLUME → ₪/litre (normalized_quantity is in litres)
+            #   UNITS  → ₪/unit  (normalized_quantity is the item count)
             qty = Decimal(str(item["normalized_quantity"] or "1.0"))
             price_per_unit = effective_price / qty if qty > 0 else effective_price
             

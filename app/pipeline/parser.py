@@ -2,7 +2,7 @@ from lxml import etree
 from decimal import Decimal
 from typing import Dict, List, Optional
 from app.db.models import UnitOfMeasure
-from app.pipeline.utils import UNIT_MAP, parse_quantity, normalize_item_code, normalize_hebrew_text
+from app.pipeline.utils import UNIT_MAP, parse_quantity, normalize_item_code, normalize_hebrew_text, get_unit_and_factor
 
 class GroceryParser:
     @staticmethod
@@ -10,19 +10,34 @@ class GroceryParser:
         items = []
         context = etree.iterparse(file_path, events=('end',), tag='Item')
         for event, elem in context:
+            # UnitQty is the reliable per-chain field describing the unit of the Quantity value
+            # e.g. "גרמים" for grams, "ליטרים" for litres, "יחידה" for units
+            unit_qty_str = (elem.findtext('UnitQty') or '').strip()
+            quantity_str = elem.findtext('Quantity') or '1'
+            price = Decimal(elem.findtext('ItemPrice') or "0")
+
+            unit_of_measure, factor = get_unit_and_factor(unit_qty_str)
+
+            try:
+                raw_qty = float(quantity_str)
+            except (ValueError, TypeError):
+                raw_qty = 1.0
+
+            # quantity_in_base: kg for MASS, litres for VOLUME, count for UNITS
+            quantity_in_base = raw_qty * factor if raw_qty > 0 else 1.0
+
             item_data = {
                 "item_code": normalize_item_code(elem.findtext('ItemCode')),
                 "name": normalize_hebrew_text(elem.findtext('ItemName')),
                 "brand": normalize_hebrew_text(elem.findtext('ManufacturerName')),
                 "category": normalize_hebrew_text(elem.findtext('CategoryName')),
-                "unit_str": elem.findtext('UnitOfMeasure'),
-                "quantity": elem.findtext('Quantity'),
-                "price": Decimal(elem.findtext('ItemPrice') or "0"),
+                "unit_of_measure": unit_of_measure,
+                # Store the raw quantity (grams/ml/units) for display; base-unit quantity used for pricing
+                "quantity": raw_qty,
+                "normalized_quantity": quantity_in_base,
+                "price": price,
             }
-            # Add unit mapping and normalization
-            item_data["unit_of_measure"] = UNIT_MAP.get(item_data["unit_str"], UnitOfMeasure.UNITS)
-            item_data["normalized_quantity"] = parse_quantity(item_data["quantity"], item_data["unit_str"])
-            
+
             items.append(item_data)
             # Clear element from memory
             elem.clear()

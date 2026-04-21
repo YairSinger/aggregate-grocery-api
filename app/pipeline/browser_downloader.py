@@ -87,7 +87,7 @@ class BrowserDownloader:
     def scrape_all(self):
         with sync_playwright() as p:
             # Using browser with a real user agent
-            browser = p.chromium.launch(headless=False)
+            browser = p.chromium.launch(headless=True)
             context = browser.new_context(
                 accept_downloads=True, 
                 ignore_https_errors=True,

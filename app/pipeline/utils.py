@@ -20,6 +20,45 @@ UNIT_CONVERSION = {
     "מארז": 1.0,
 }
 
+# UnitQty field: maps the XML's free-text quantity-unit to (UnitOfMeasure enum, factor_to_base_unit)
+# Base units: kg for MASS, liter for VOLUME, unit for UNITS
+# factor_to_base_unit converts from the XML quantity unit to the base unit
+# e.g. "גרמים" -> MASS, factor=0.001  means: Quantity grams * 0.001 = qty in kg
+UNIT_QTY_MAP: dict[str, tuple[UnitOfMeasure, float]] = {
+    # Mass — grams
+    "גרם":      (UnitOfMeasure.MASS,   0.001),
+    "גרמים":    (UnitOfMeasure.MASS,   0.001),
+    # Mass — kilograms
+    "ק\"ג":     (UnitOfMeasure.MASS,   1.0),
+    "קג":       (UnitOfMeasure.MASS,   1.0),
+    "ק'ג":      (UnitOfMeasure.MASS,   1.0),
+    "קילוגרם":  (UnitOfMeasure.MASS,   1.0),
+    "קילוגרמים":(UnitOfMeasure.MASS,   1.0),
+    # Volume — millilitres
+    "מ\"ל":     (UnitOfMeasure.VOLUME, 0.001),
+    "מל":       (UnitOfMeasure.VOLUME, 0.001),
+    "מיליליטר": (UnitOfMeasure.VOLUME, 0.001),
+    "מיליליטרים":(UnitOfMeasure.VOLUME,0.001),
+    # Volume — litres
+    "ליטר":     (UnitOfMeasure.VOLUME, 1.0),
+    "ליטרים":   (UnitOfMeasure.VOLUME, 1.0),
+    # Units / packages
+    "יחידה":    (UnitOfMeasure.UNITS,  1.0),
+    "יחידות":   (UnitOfMeasure.UNITS,  1.0),
+    "מארז":     (UnitOfMeasure.UNITS,  1.0),
+    "מארזים":   (UnitOfMeasure.UNITS,  1.0),
+}
+
+
+def get_unit_and_factor(unit_qty_str: str | None) -> tuple[UnitOfMeasure, float]:
+    """Return (UnitOfMeasure enum, factor_to_base_unit) for a UnitQty string.
+    Falls back to UNITS/1.0 when unrecognised."""
+    if not unit_qty_str:
+        return UnitOfMeasure.UNITS, 1.0
+    key = unit_qty_str.strip()
+    return UNIT_QTY_MAP.get(key, (UnitOfMeasure.UNITS, 1.0))
+
+
 def normalize_hebrew_text(text: str) -> str:
     if not text:
         return ""

@@ -3,116 +3,94 @@
 import { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import Auth from '../components/Auth';
+import AggregatorManager from '../components/AggregatorManager';
+import ItemsTable from '../components/ItemsTable';
+import CartOptimizer from '../components/CartOptimizer';
+
+type Tab = 'aggregates' | 'items' | 'cart';
 
 export default function Home() {
   const [email, setEmail] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [aggregates, setAggregates] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [aggregatesCount, setAggregatesCount] = useState(0);
+  const [tab, setTab] = useState<Tab>('items');
 
   const handleLogin = (userEmail: string) => {
     localStorage.setItem('user_email', userEmail);
     setEmail(userEmail);
     setIsLoggedIn(true);
-    loadUserData(userEmail);
   };
 
-
-  const loadUserData = async (userEmail: string) => {
-    try {
-      const data = await api.aggregates.list(userEmail);
-      setAggregates(data);
-    } catch (err) {
-      console.error(err);
-    }
+  const handleLogout = () => {
+    localStorage.removeItem('user_email');
+    setIsLoggedIn(false);
+    setEmail('');
   };
 
-  const handleSearch = async () => {
-    if (searchQuery.length < 2) return;
-    setLoading(true);
+  const refreshData = async () => {
+    if (!email) return;
     try {
-      const results = await api.items.search(searchQuery);
-      setSearchResults(results);
+      const data = await api.aggregates.list(email);
+      setAggregatesCount(data.length);
     } catch (err) {
       console.error(err);
-    } finally {
-      setLoading(false);
     }
   };
 
   useEffect(() => {
     const savedEmail = localStorage.getItem('user_email');
-    if (savedEmail) {
-      setEmail(savedEmail);
-      setIsLoggedIn(true);
-      loadUserData(savedEmail);
-    }
+    if (savedEmail) { setEmail(savedEmail); setIsLoggedIn(true); }
   }, []);
 
-  if (!isLoggedIn) {
-    return <Auth onLogin={handleLogin} />;
-  }
+  useEffect(() => { if (isLoggedIn) refreshData(); }, [isLoggedIn, email]);
+
+  if (!isLoggedIn) return <Auth onLogin={handleLogin} />;
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: 'items',      label: 'מוצרים ומחירים' },
+    { key: 'aggregates', label: 'קבוצות מוצרים' },
+    { key: 'cart',       label: 'סל קניות אופטימלי' },
+  ];
 
   return (
     <main className="container">
-      <div style={{ display: 'flex', gap: '2rem', flexDirection: 'column' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+        <div>
           <h1>שלום, {email}</h1>
-          <button className="button" style={{ background: 'var(--secondary)' }} onClick={() => {
-            localStorage.removeItem('user_email');
-            setIsLoggedIn(false);
-          }}>התנתק</button>
-        </header>
+          <p style={{ color: 'var(--secondary)' }}>השוואת מחירי מכולת</p>
+        </div>
+        <button className="button" style={{ background: 'var(--secondary)' }} onClick={handleLogout}>התנתק</button>
+      </header>
 
-        <section className="grid">
-          <div className="card">
-            <h2>חיפוש מוצרים</h2>
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-              <input 
-                className="input"
-                style={{ marginBottom: 0 }}
-                placeholder="חפש מוצר (למשל: חלב)" 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              <button className="button" onClick={handleSearch}>חפש</button>
-            </div>
-            
-            <div style={{ marginTop: '1rem', maxHeight: '300px', overflowY: 'auto' }}>
-              {searchResults.map(item => (
-                <div key={item.id} style={{ padding: '0.5rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{item.name} ({item.brand})</span>
-                  <button style={{ color: 'var(--primary)', border: 'none', background: 'none', cursor: 'pointer' }}>הוסף לקבוצה</button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="card">
-            <h2>הקבוצות שלי (Aggregates)</h2>
-            <div style={{ marginTop: '1rem' }}>
-              {aggregates.length === 0 ? (
-                 <p style={{ color: 'var(--secondary)' }}>אין קבוצות עדיין. חפש מוצרים והוסף אותם לקבוצה חדשה.</p>
-              ) : (
-                aggregates.map(agg => (
-                  <div key={agg.id} className="card" style={{ marginBottom: '0.5rem', padding: '1rem' }}>
-                    <strong>{agg.name}</strong> ({agg.unit_of_measure})
-                    <p style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>{agg.items.length} מוצרים בקבוצה</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="card">
-          <h2>תכנון סל קניות</h2>
-          <p style={{ marginTop: '1rem', color: 'var(--secondary)' }}>בחר קבוצות מהרשימה לעיל והוסף אותן לסל לקבלת המחיר הזול ביותר.</p>
-          <button className="button" style={{ marginTop: '1rem' }} disabled={aggregates.length === 0}>חשב סל אופטימלי</button>
-        </section>
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '2px solid var(--border)', paddingBottom: '0' }}>
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            style={{
+              padding: '0.6rem 1.2rem',
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              fontWeight: tab === t.key ? 700 : 400,
+              color: tab === t.key ? 'var(--primary)' : 'var(--secondary)',
+              borderBottom: tab === t.key ? '2px solid var(--primary)' : '2px solid transparent',
+              marginBottom: '-2px',
+              fontSize: '0.95rem',
+              transition: 'color 0.15s',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
+
+      {tab === 'items' && <ItemsTable />}
+
+      {tab === 'aggregates' && <AggregatorManager email={email} onUpdate={refreshData} />}
+
+      {tab === 'cart' && <CartOptimizer email={email} />}
     </main>
   );
 }
