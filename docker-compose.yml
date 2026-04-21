@@ -10,6 +10,16 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Dev-only Postgres tuning: reduces checkpoint frequency and disables fsync
+    # for dramatically better performance on Docker Desktop / macOS.
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c max_wal_size=1GB
+      -c checkpoint_timeout=30min
+      -c checkpoint_completion_target=0.9
+      -c synchronous_commit=off
+      -c fsync=off
     restart: always
 
   backend:
