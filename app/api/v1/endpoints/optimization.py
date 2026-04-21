@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.models import Store, ShoppingList, ShoppingListEntry, Aggregate, Price, Item, AggregateItem, Chain
-from app.schemas.optimization import OptimizationRequest, OptimizationResponse, StoreResult
+from app.schemas.optimization import OptimizationRequest, OptimizationResponse, StoreResult, AlternativeStore
 
 router = APIRouter()
 
@@ -51,6 +51,24 @@ def _build_store_options(db: Session, candidate_stores, list_entries):
     return options
 
 
+def _full_basket_alternatives(store_options, n_aggregates, exclude_store_ids):
+    """Return all stores that can cover the full basket, sorted by cost, excluding given ids."""
+    candidates = []
+    for store_id, data in store_options.items():
+        if store_id in exclude_store_ids:
+            continue
+        if len(data["aggregates"]) < n_aggregates:
+            continue
+        total = sum(Decimal(str(v["cost"])) for v in data["aggregates"].values())
+        candidates.append(AlternativeStore(
+            store_name=data["store_name"],
+            chain_name=data["chain_name"],
+            total_cost=total,
+        ))
+    candidates.sort(key=lambda x: x.total_cost)
+    return candidates
+
+
 @router.post("/", response_model=OptimizationResponse)
 def optimize_basket(
     request: OptimizationRequest,
@@ -77,21 +95,19 @@ def optimize_basket(
     n_aggregates = len(list_entries)
 
     if request.max_stores == 1:
-        best_store_id = None
-        min_total = Decimal("Infinity")
-        for store_id, data in store_options.items():
-            if len(data["aggregates"]) < n_aggregates:
-                continue
-            total = sum(Decimal(str(v["cost"])) for v in data["aggregates"].values())
-            if total < min_total:
-                min_total = total
-                best_store_id = store_id
-
-        if not best_store_id:
+        # Rank all complete-basket stores
+        all_complete = _full_basket_alternatives(store_options, n_aggregates, exclude_store_ids=set())
+        if not all_complete:
             raise HTTPException(
                 status_code=404,
                 detail="No single store carries all items in your list",
             )
+
+        best = all_complete[0]
+        best_store_id = next(
+            sid for sid, d in store_options.items()
+            if d["store_name"] == best.store_name and d["chain_name"] == best.chain_name
+        )
         d = store_options[best_store_id]
         results = [StoreResult(
             store_id=best_store_id,
@@ -99,8 +115,9 @@ def optimize_basket(
             chain_name=d["chain_name"],
             distance_km=0.0,
             items=list(d["aggregates"].values()),
-            total_cost=min_total,
+            total_cost=best.total_cost,
         )]
+        alternatives = all_complete[1:3]
     else:
         # Greedy multi-store
         remaining = {agg.id for _, agg in list_entries}
@@ -140,9 +157,15 @@ def optimize_basket(
                 total_cost=total,
             ))
 
+        # Show single-store alternatives for comparison
+        alternatives = _full_basket_alternatives(store_options, n_aggregates, exclude_store_ids=set(selected))[:2]
+
     total_basket = sum(r.total_cost for r in results)
+    total_savings = (alternatives[0].total_cost - total_basket) if alternatives else Decimal("0.0")
+
     return OptimizationResponse(
         selected_stores=results,
         total_basket_cost=total_basket,
-        total_savings=Decimal("0.0"),
+        total_savings=total_savings,
+        alternatives=alternatives,
     )

@@ -15,10 +15,16 @@ class StoreResult(BaseModel):
     store_name: str
     chain_name: str
     distance_km: float
-    items: List[Dict] # {aggregate_id, item_id, item_name, quantity, cost}
+    items: List[Dict]
+    total_cost: Decimal
+
+class AlternativeStore(BaseModel):
+    store_name: str
+    chain_name: str
     total_cost: Decimal
 
 class OptimizationResponse(BaseModel):
     selected_stores: List[StoreResult]
     total_basket_cost: Decimal
     total_savings: Decimal
+    alternatives: List[AlternativeStore] = []
