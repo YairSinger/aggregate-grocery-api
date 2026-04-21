@@ -1,6 +1,6 @@
 from typing import Any, List
 from uuid import UUID
-from decimal import Decimal
+from decimal import Decimal, ROUND_UP
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -30,14 +30,17 @@ def _build_store_options(db: Session, candidate_stores, list_entries):
             )
             if cheapest:
                 price, item = cheapest
-                cost = price.price_per_unit * Decimal(str(entry.desired_amount))
+                unit_qty = Decimal(str(item.quantity)) if item.quantity and item.quantity > 0 else Decimal("1")
+                desired = Decimal(str(entry.desired_amount))
+                packages_needed = (desired / unit_qty).quantize(Decimal("1"), rounding=ROUND_UP)
+                cost = price.effective_price * packages_needed
                 agg_map[aggregate.id] = {
                     "aggregate_id": str(aggregate.id),
                     "aggregate_name": aggregate.name,
                     "item_id": str(item.id),
                     "item_name": item.name,
-                    "price_per_unit": float(price.price_per_unit),
-                    "desired_amount": entry.desired_amount,
+                    "price_per_unit": float(price.effective_price),
+                    "desired_amount": float(packages_needed),
                     "cost": float(cost),
                 }
         options[store.id] = {
@@ -66,7 +69,6 @@ def optimize_basket(
     if not list_entries:
         raise HTTPException(status_code=400, detail="Shopping list has no entries")
 
-    # Use all stores (no geo-filter until stores have coordinates)
     candidate_stores = db.query(Store, Chain).join(Chain).all()
     if not candidate_stores:
         raise HTTPException(status_code=404, detail="No stores in database")
@@ -100,7 +102,7 @@ def optimize_basket(
             total_cost=min_total,
         )]
     else:
-        # Greedy: each round pick the store that covers remaining aggregates at lowest total cost
+        # Greedy multi-store
         remaining = {agg.id for _, agg in list_entries}
         selected: list[UUID] = []
         results = []
@@ -116,7 +118,7 @@ def optimize_basket(
                 if not covered:
                     continue
                 cost = sum(Decimal(str(data["aggregates"][aid]["cost"])) for aid in covered)
-                score = cost / len(covered)  # cost per aggregate covered
+                score = cost / len(covered)
                 if score < best_score:
                     best_score = score
                     best_id = store_id
@@ -137,10 +139,6 @@ def optimize_basket(
                 items=[d["aggregates"][aid] for aid in covered],
                 total_cost=total,
             ))
-
-        if remaining:
-            # Append a note entry for uncovered aggregates
-            pass  # Frontend will show "not found" for missing items
 
     total_basket = sum(r.total_cost for r in results)
     return OptimizationResponse(
