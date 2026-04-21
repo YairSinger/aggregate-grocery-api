@@ -73,7 +73,7 @@ class Price(Base):
     discount_price = Column(Numeric(precision=10, scale=2)) # Price after standard discount
     effective_price = Column(Numeric(precision=10, scale=2), nullable=False) # Resulting price after thresholds met
     discount_description = Column(Text)
-    price_per_unit = Column(Numeric(precision=10, scale=4), nullable=False) # Price / quantity
+    price_per_unit = Column(Numeric(precision=12, scale=4), nullable=False) # Price / quantity
     
     item = relationship("Item", back_populates="prices")
     store = relationship("Store", back_populates="prices")
