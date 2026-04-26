@@ -11,32 +11,54 @@ from app.schemas.optimization import OptimizationRequest, OptimizationResponse, 
 router = APIRouter()
 
 
+def _resolve_entry_key(entry: ShoppingListEntry) -> str:
+    """Stable key for an entry — aggregate id or item id."""
+    return str(entry.aggregate_id) if entry.aggregate_id else str(entry.item_id)
+
+
 def _build_store_options(db: Session, candidate_stores, list_entries):
-    """For each store and aggregate entry, find the cheapest item. Returns nested dict."""
+    """For each store and list entry, find the cheapest applicable item."""
     options = {}
     for store, chain in candidate_stores:
         agg_map = {}
-        for entry, aggregate in list_entries:
-            cheapest = (
-                db.query(Price, Item)
-                .join(Item)
-                .join(AggregateItem, AggregateItem.item_id == Item.id)
-                .filter(
-                    AggregateItem.aggregate_id == aggregate.id,
-                    Price.store_id == store.id,
+        for entry in list_entries:
+            key = _resolve_entry_key(entry)
+
+            if entry.aggregate_id:
+                cheapest = (
+                    db.query(Price, Item)
+                    .join(Item)
+                    .join(AggregateItem, AggregateItem.item_id == Item.id)
+                    .filter(
+                        AggregateItem.aggregate_id == entry.aggregate_id,
+                        Price.store_id == store.id,
+                    )
+                    .order_by(Price.price_per_unit)
+                    .first()
                 )
-                .order_by(Price.price_per_unit)
-                .first()
-            )
+                label = entry.aggregate.name if entry.aggregate else key
+            else:
+                cheapest = (
+                    db.query(Price, Item)
+                    .join(Item)
+                    .filter(
+                        Item.id == entry.item_id,
+                        Price.store_id == store.id,
+                    )
+                    .order_by(Price.price_per_unit)
+                    .first()
+                )
+                label = entry.item.name if entry.item else key
+
             if cheapest:
                 price, item = cheapest
                 unit_qty = Decimal(str(item.quantity)) if item.quantity and item.quantity > 0 else Decimal("1")
                 desired = Decimal(str(entry.desired_amount))
                 packages_needed = (desired / unit_qty).quantize(Decimal("1"), rounding=ROUND_UP)
                 cost = price.effective_price * packages_needed
-                agg_map[aggregate.id] = {
-                    "aggregate_id": str(aggregate.id),
-                    "aggregate_name": aggregate.name,
+                agg_map[key] = {
+                    "aggregate_id": key,
+                    "aggregate_name": label,
                     "item_id": str(item.id),
                     "item_name": item.name,
                     "price_per_unit": float(price.effective_price),
@@ -51,13 +73,13 @@ def _build_store_options(db: Session, candidate_stores, list_entries):
     return options
 
 
-def _full_basket_alternatives(store_options, n_aggregates, exclude_store_ids):
-    """Return all stores that can cover the full basket, sorted by cost, excluding given ids."""
+def _full_basket_alternatives(store_options, n_entries, exclude_store_ids):
+    """Return all stores that can cover the full basket, sorted by cost."""
     candidates = []
     for store_id, data in store_options.items():
         if store_id in exclude_store_ids:
             continue
-        if len(data["aggregates"]) < n_aggregates:
+        if len(data["aggregates"]) < n_entries:
             continue
         total = sum(Decimal(str(v["cost"])) for v in data["aggregates"].values())
         candidates.append(AlternativeStore(
@@ -78,25 +100,29 @@ def optimize_basket(
     if not shopping_list:
         raise HTTPException(status_code=404, detail="Shopping list not found")
 
+    # Load entries with their optional relationships eagerly
     list_entries = (
-        db.query(ShoppingListEntry, Aggregate)
-        .join(Aggregate)
+        db.query(ShoppingListEntry)
         .filter(ShoppingListEntry.shopping_list_id == request.shopping_list_id)
         .all()
     )
     if not list_entries:
         raise HTTPException(status_code=400, detail="Shopping list has no entries")
 
+    # Eagerly load aggregate/item for label resolution
+    for entry in list_entries:
+        _ = entry.aggregate
+        _ = entry.item
+
     candidate_stores = db.query(Store, Chain).join(Chain).all()
     if not candidate_stores:
         raise HTTPException(status_code=404, detail="No stores in database")
 
     store_options = _build_store_options(db, candidate_stores, list_entries)
-    n_aggregates = len(list_entries)
+    n_entries = len(list_entries)
 
     if request.max_stores == 1:
-        # Rank all complete-basket stores
-        all_complete = _full_basket_alternatives(store_options, n_aggregates, exclude_store_ids=set())
+        all_complete = _full_basket_alternatives(store_options, n_entries, exclude_store_ids=set())
         if not all_complete:
             raise HTTPException(
                 status_code=404,
@@ -119,8 +145,7 @@ def optimize_basket(
         )]
         alternatives = all_complete[1:3]
     else:
-        # Greedy multi-store
-        remaining = {agg.id for _, agg in list_entries}
+        remaining = {_resolve_entry_key(e) for e in list_entries}
         selected: list[UUID] = []
         results = []
 
@@ -157,8 +182,7 @@ def optimize_basket(
                 total_cost=total,
             ))
 
-        # Show single-store alternatives for comparison
-        alternatives = _full_basket_alternatives(store_options, n_aggregates, exclude_store_ids=set(selected))[:2]
+        alternatives = _full_basket_alternatives(store_options, n_entries, exclude_store_ids=set(selected))[:2]
 
     total_basket = sum(r.total_cost for r in results)
     total_savings = (alternatives[0].total_cost - total_basket) if alternatives else Decimal("0.0")

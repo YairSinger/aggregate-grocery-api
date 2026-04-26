@@ -96,6 +96,32 @@ export default function AggregatorManager({ email, onUpdate }: { email: string, 
     }
   };
 
+  const removeItemFromAggregate = async (agg: Aggregate, itemId: string) => {
+    try {
+      await api.aggregates.update(email, agg.id, {
+        name: agg.name,
+        description: agg.description,
+        unit_of_measure: agg.unit_of_measure,
+        item_ids: agg.items.map(i => i.item.id).filter(id => id !== itemId),
+      });
+      fetchAggregates();
+      onUpdate();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const deleteAggregate = async (agg: Aggregate) => {
+    if (!window.confirm(`למחוק את הקבוצה "${agg.name}"?`)) return;
+    try {
+      await api.aggregates.delete(email, agg.id);
+      fetchAggregates();
+      onUpdate();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   const startEditing = (agg: Aggregate) => {
     setEditingAggregate(agg);
     setSelectedItemIds(new Set(agg.items.map(i => i.item.id)));
@@ -124,9 +150,32 @@ export default function AggregatorManager({ email, onUpdate }: { email: string, 
             <div key={agg.id} className="card" style={{ border: '1px solid var(--border)' }}>
               <h3>{agg.name}</h3>
               <p style={{ fontSize: '0.9rem', color: 'var(--secondary)', minHeight: '3em' }}>{agg.description || 'אין תיאור'}</p>
-              <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              {agg.items.length > 0 && (
+                <ul style={{ listStyle: 'none', padding: 0, margin: '0.5rem 0', fontSize: '0.85rem' }}>
+                  {agg.items.slice(0, 3).map(({ item }) => (
+                    <li key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', padding: '2px 0' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeItemFromAggregate(agg, item.id)}
+                        title="הסר מוצר"
+                        style={{ border: 'none', background: 'transparent', color: 'var(--secondary)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '0 4px' }}
+                      >×</button>
+                    </li>
+                  ))}
+                  {agg.items.length > 3 && (
+                    <li style={{ color: 'var(--secondary)', fontStyle: 'italic', padding: '2px 0' }}>
+                      + {agg.items.length - 3} נוספים
+                    </li>
+                  )}
+                </ul>
+              )}
+              <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                 <span className="badge">{agg.unit_of_measure}</span>
-                <button className="button-outline" onClick={() => startEditing(agg)}>ערוך</button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button className="button-outline" onClick={() => startEditing(agg)}>ערוך</button>
+                  <button className="button-outline" style={{ color: '#c00', borderColor: '#c00' }} onClick={() => deleteAggregate(agg)}>מחק</button>
+                </div>
               </div>
             </div>
           ))}
@@ -171,6 +220,39 @@ export default function AggregatorManager({ email, onUpdate }: { email: string, 
                 placeholder="הוסף תיאור לשימוש עתידי..."
               />
             </div>
+
+            {editingAggregate.items && editingAggregate.items.length > 0 && (
+              <div style={{ marginTop: '2rem', padding: '1rem', background: '#f9f9f9', borderRadius: '8px' }}>
+                <h3>מוצרים בקבוצה ({selectedItemIds.size})</h3>
+                <ul style={{ listStyle: 'none', padding: 0, margin: '0.75rem 0 0', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {editingAggregate.items.map(({ item }) => {
+                    const active = selectedItemIds.has(item.id);
+                    return (
+                      <li key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '4px 8px', borderRadius: '4px', background: active ? '#fff' : '#fde', border: '1px solid #eee', opacity: active ? 1 : 0.5, minWidth: 0 }}>
+                        <span style={{ flex: 1, fontSize: '0.85rem', textDecoration: active ? 'none' : 'line-through', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.name} <small style={{ color: 'var(--secondary)' }}>({item.brand})</small>
+                        </span>
+                        {active ? (
+                          <button
+                            type="button"
+                            onClick={() => { const n = new Set(selectedItemIds); n.delete(item.id); setSelectedItemIds(n); }}
+                            title="הסר מוצר"
+                            style={{ border: 'none', background: 'transparent', color: '#c00', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, padding: '0 4px' }}
+                          >×</button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => { const n = new Set(selectedItemIds); n.add(item.id); setSelectedItemIds(n); }}
+                            title="החזר מוצר"
+                            style={{ border: 'none', background: 'transparent', color: 'green', cursor: 'pointer', fontSize: '0.8rem', padding: '0 4px' }}
+                          >↩</button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
 
             <div style={{ marginTop: '2rem', padding: '1rem', background: '#f9f9f9', borderRadius: '8px' }}>
               <h3>חיפוש והוספת מוצרים לקבוצה</h3>

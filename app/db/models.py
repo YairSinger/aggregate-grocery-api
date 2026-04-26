@@ -126,8 +126,10 @@ class ShoppingListEntry(Base):
     __tablename__ = "shopping_list_entries"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     shopping_list_id = Column(UUID(as_uuid=True), ForeignKey("shopping_lists.id"), nullable=False)
-    aggregate_id = Column(UUID(as_uuid=True), ForeignKey("aggregates.id"), nullable=False)
-    desired_amount = Column(Float, nullable=False) # In aggregate.unit_of_measure
-    
+    aggregate_id = Column(UUID(as_uuid=True), ForeignKey("aggregates.id"), nullable=True)
+    item_id = Column(UUID(as_uuid=True), ForeignKey("items.id"), nullable=True)
+    desired_amount = Column(Float, nullable=False)
+
     shopping_list = relationship("ShoppingList", back_populates="entries")
     aggregate = relationship("Aggregate")
+    item = relationship("Item")

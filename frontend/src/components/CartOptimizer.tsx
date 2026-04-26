@@ -10,9 +10,24 @@ interface Aggregate {
   unit_of_measure: string;
 }
 
+interface Item {
+  id: string;
+  name: string;
+  brand: string;
+  item_code: string;
+  unit_of_measure: string;
+  quantity: number;
+}
+
+interface SpecificItem {
+  item: Item;
+  qty: number;
+}
+
 interface ShoppingListEntry {
   id: string;
-  aggregate_id: string;
+  aggregate_id: string | null;
+  item_id: string | null;
   desired_amount: number;
 }
 
@@ -71,6 +86,12 @@ export default function CartOptimizer({ email }: { email: string }) {
   const [result, setResult] = useState<OptimizationResult | null>(null);
   const [error, setError] = useState('');
 
+  // Specific items
+  const [specificItems, setSpecificItems] = useState<SpecificItem[]>([]);
+  const [itemSearch, setItemSearch] = useState('');
+  const [itemResults, setItemResults] = useState<Item[]>([]);
+  const [itemSearchLoading, setItemSearchLoading] = useState(false);
+
   useEffect(() => {
     Promise.all([
       api.aggregates.list(email),
@@ -81,17 +102,18 @@ export default function CartOptimizer({ email }: { email: string }) {
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
       setRecentLists(sorted.slice(0, 5));
-      if (sorted.length > 0) applyList(sorted[0]);
+      if (sorted.length > 0) applyList(sorted[0], aggs);
     }).catch(console.error);
   }, [email]);
 
-  const applyList = (list: ShoppingList) => {
+  const applyList = (list: ShoppingList, aggs?: Aggregate[]) => {
     const q: Record<string, string> = {};
     for (const entry of list.entries) {
-      q[entry.aggregate_id] = String(entry.desired_amount);
+      if (entry.aggregate_id) q[entry.aggregate_id] = String(entry.desired_amount);
     }
     setQuantities(q);
     setLoadedListName(list.name);
+    setSpecificItems([]);
   };
 
   const selectedAggregates = aggregates.filter(a => {
@@ -99,21 +121,55 @@ export default function CartOptimizer({ email }: { email: string }) {
     return q > 0;
   });
 
+  const handleItemSearch = async () => {
+    if (itemSearch.length < 2) return;
+    setItemSearchLoading(true);
+    try {
+      const data = await api.items.search(itemSearch);
+      setItemResults(data);
+    } catch (err) {
+      console.error('Item search failed', err);
+    } finally {
+      setItemSearchLoading(false);
+    }
+  };
+
+  const addSpecificItem = (item: Item) => {
+    if (specificItems.find(s => s.item.id === item.id)) return;
+    setSpecificItems(prev => [...prev, { item, qty: 1 }]);
+  };
+
+  const updateSpecificQty = (itemId: string, qty: number) => {
+    setSpecificItems(prev => prev.map(s => s.item.id === itemId ? { ...s, qty: Math.max(1, Math.floor(qty)) } : s));
+  };
+
+  const removeSpecificItem = (itemId: string) => {
+    setSpecificItems(prev => prev.filter(s => s.item.id !== itemId));
+  };
+
   const handleOptimize = async () => {
-    if (selectedAggregates.length === 0) {
-      setError('יש להזין כמות לפחות לקבוצה אחת');
+    if (selectedAggregates.length === 0 && specificItems.length === 0) {
+      setError('יש להזין כמות לפחות לפריט אחד');
       return;
     }
     setError('');
     setLoading(true);
     setResult(null);
     try {
-      const list = await api.shoppingLists.create(email, {
-        name: `סל ${new Date().toLocaleDateString('he-IL')}`,
-        entries: selectedAggregates.map(a => ({
+      const entries = [
+        ...selectedAggregates.map(a => ({
           aggregate_id: a.id,
           desired_amount: parseFloat(quantities[a.id]),
         })),
+        ...specificItems.map(s => ({
+          item_id: s.item.id,
+          desired_amount: s.qty,
+        })),
+      ];
+
+      const list = await api.shoppingLists.create(email, {
+        name: `סל ${new Date().toLocaleDateString('he-IL')}`,
+        entries,
       });
 
       const opt = await api.optimization.optimize(email, {
@@ -122,7 +178,6 @@ export default function CartOptimizer({ email }: { email: string }) {
       });
       setResult(opt);
 
-      // Refresh recent lists
       api.shoppingLists.list(email).then(lists => {
         const sorted = [...lists].sort(
           (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -136,12 +191,12 @@ export default function CartOptimizer({ email }: { email: string }) {
     }
   };
 
-  if (aggregates.length === 0) {
+  if (aggregates.length === 0 && specificItems.length === 0) {
     return (
       <section className="card">
         <h2>סל קניות אופטימלי</h2>
         <p style={{ marginTop: '1rem', color: 'var(--secondary)' }}>
-          אין קבוצות מוצרים. עבור ללשונית "קבוצות מוצרים" ויצור קבוצות תחילה.
+          הוסף קבוצות מוצרים או חפש מוצרים ספציפיים למטה.
         </p>
       </section>
     );
@@ -218,38 +273,130 @@ export default function CartOptimizer({ email }: { email: string }) {
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
-          {aggregates.map(agg => (
-            <div key={agg.id} style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '0.75rem 1rem', border: '1px solid var(--border)', borderRadius: '8px',
-              background: quantities[agg.id] && parseFloat(quantities[agg.id]) > 0
-                ? 'rgba(99,102,241,0.08)' : 'var(--card-bg)',
-            }}>
-              <div>
-                <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>{agg.name}</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>
-                  {UNIT_LABEL[agg.unit_of_measure] ?? agg.unit_of_measure}
+        {aggregates.length > 0 && (
+          <>
+            <h3 style={{ marginBottom: '0.75rem', fontSize: '0.95rem', color: 'var(--secondary)' }}>קבוצות מוצרים</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
+              {aggregates.map(agg => (
+                <div key={agg.id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '0.75rem 1rem', border: '1px solid var(--border)', borderRadius: '8px',
+                  background: quantities[agg.id] && parseFloat(quantities[agg.id]) > 0
+                    ? 'rgba(99,102,241,0.08)' : 'var(--card-bg)',
+                }}>
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>{agg.name}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>
+                      {UNIT_LABEL[agg.unit_of_measure] ?? agg.unit_of_measure}
+                    </div>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    placeholder="0"
+                    value={quantities[agg.id] || ''}
+                    onChange={e => setQuantities(q => ({ ...q, [agg.id]: e.target.value }))}
+                    style={{
+                      width: '72px', padding: '0.4rem 0.5rem', borderRadius: '6px',
+                      border: '1px solid var(--border)', background: 'var(--card-bg)',
+                      color: 'var(--foreground)', fontSize: '0.9rem', textAlign: 'center',
+                    }}
+                  />
                 </div>
-              </div>
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                placeholder="0"
-                value={quantities[agg.id] || ''}
-                onChange={e => setQuantities(q => ({ ...q, [agg.id]: e.target.value }))}
-                style={{
-                  width: '72px', padding: '0.4rem 0.5rem', borderRadius: '6px',
-                  border: '1px solid var(--border)', background: 'var(--card-bg)',
-                  color: 'var(--foreground)', fontSize: '0.9rem', textAlign: 'center',
-                }}
-              />
+              ))}
             </div>
-          ))}
+          </>
+        )}
+
+        {/* Specific items section */}
+        <div style={{ borderTop: aggregates.length > 0 ? '1px solid var(--border)' : 'none', paddingTop: aggregates.length > 0 ? '1.5rem' : 0 }}>
+          <h3 style={{ marginBottom: '0.75rem', fontSize: '0.95rem', color: 'var(--secondary)' }}>מוצרים ספציפיים</h3>
+
+          {specificItems.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.6rem', marginBottom: '1rem' }}>
+              {specificItems.map(({ item, qty }) => (
+                <div key={item.id} style={{
+                  display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  padding: '0.6rem 0.75rem', border: '1px solid var(--primary)', borderRadius: '8px',
+                  background: 'rgba(99,102,241,0.06)',
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 500, fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>{item.brand}</div>
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={qty}
+                    onChange={e => updateSpecificQty(item.id, parseInt(e.target.value) || 1)}
+                    style={{
+                      width: '56px', padding: '0.3rem 0.4rem', borderRadius: '6px',
+                      border: '1px solid var(--border)', background: 'var(--card-bg)',
+                      color: 'var(--foreground)', fontSize: '0.9rem', textAlign: 'center',
+                    }}
+                  />
+                  <span style={{ fontSize: '0.75rem', color: 'var(--secondary)', whiteSpace: 'nowrap' }}>יח׳</span>
+                  <button
+                    type="button"
+                    onClick={() => removeSpecificItem(item.id)}
+                    style={{ border: 'none', background: 'transparent', color: '#c00', cursor: 'pointer', fontSize: '1.1rem', padding: '0 2px', lineHeight: 1 }}
+                  >×</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <input
+              className="input"
+              style={{ marginBottom: 0 }}
+              placeholder="חפש מוצר להוספה..."
+              value={itemSearch}
+              onChange={e => setItemSearch(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleItemSearch()}
+            />
+            <button type="button" className="button" onClick={handleItemSearch} disabled={itemSearchLoading}>
+              {itemSearchLoading ? 'מחפש...' : 'חפש'}
+            </button>
+          </div>
+
+          {itemResults.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.5rem', maxHeight: '320px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.75rem' }}>
+              {itemResults.map(item => {
+                const already = specificItems.some(s => s.item.id === item.id);
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      padding: '0.6rem 0.75rem', border: '1px solid var(--border)', borderRadius: '8px',
+                      background: already ? 'rgba(99,102,241,0.08)' : 'var(--card-bg)',
+                      display: 'flex', flexDirection: 'column', gap: '0.25rem',
+                    }}
+                  >
+                    <div style={{ fontWeight: 500, fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.name}>{item.name}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>{item.brand}</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--secondary)' }}>
+                      {item.quantity} {UNIT_LABEL[item.unit_of_measure] ?? item.unit_of_measure}
+                    </div>
+                    <button
+                      type="button"
+                      className="button-outline"
+                      style={{ marginTop: '0.25rem', padding: '2px 8px', fontSize: '0.78rem', opacity: already ? 0.5 : 1 }}
+                      onClick={() => addSpecificItem(item)}
+                      disabled={already}
+                    >
+                      {already ? '✓ נוסף' : '+ הוסף'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+        <div style={{ marginTop: '1.5rem', display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <label style={{ fontSize: '0.9rem', color: 'var(--secondary)' }}>חנויות מקסימום:</label>
             <select
@@ -263,12 +410,12 @@ export default function CartOptimizer({ email }: { email: string }) {
             </select>
           </div>
           <div style={{ fontSize: '0.85rem', color: 'var(--secondary)' }}>
-            {selectedAggregates.length} קבוצות נבחרו
+            {selectedAggregates.length + specificItems.length} פריטים נבחרו
           </div>
           <button
             className="button"
             onClick={handleOptimize}
-            disabled={loading || selectedAggregates.length === 0}
+            disabled={loading || (selectedAggregates.length === 0 && specificItems.length === 0)}
             style={{ marginRight: 'auto' }}
           >
             {loading ? 'מחשב...' : 'חשב סל אופטימלי'}
@@ -284,7 +431,6 @@ export default function CartOptimizer({ email }: { email: string }) {
 
       {result && (
         <section className="card">
-          {/* Savings banner */}
           <div style={{ marginBottom: '1.25rem' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--primary)' }}>
@@ -342,10 +488,10 @@ export default function CartOptimizer({ email }: { email: string }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--card-bg)' }}>
-                      <th style={{ padding: '0.5rem 1rem', textAlign: 'right', color: 'var(--secondary)', fontWeight: 600 }}>קבוצה</th>
+                      <th style={{ padding: '0.5rem 1rem', textAlign: 'right', color: 'var(--secondary)', fontWeight: 600 }}>פריט</th>
                       <th style={{ padding: '0.5rem 1rem', textAlign: 'right', color: 'var(--secondary)', fontWeight: 600 }}>מוצר זול ביותר</th>
-                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600 }}>מחיר ליחידה</th>
-                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600 }}>יחידות</th>
+                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600 }}>מחיר ליח׳</th>
+                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600 }}>כמות</th>
                       <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600 }}>עלות</th>
                     </tr>
                   </thead>
