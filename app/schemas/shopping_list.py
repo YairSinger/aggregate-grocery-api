@@ -1,11 +1,18 @@
 from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from uuid import UUID
 
 class ShoppingListEntryBase(BaseModel):
-    aggregate_id: UUID
+    aggregate_id: Optional[UUID] = None
+    item_id: Optional[UUID] = None
     desired_amount: float
+
+    @model_validator(mode="after")
+    def check_one_of(self):
+        if (self.aggregate_id is None) == (self.item_id is None):
+            raise ValueError("Exactly one of aggregate_id or item_id must be set")
+        return self
 
 class ShoppingListEntryCreate(ShoppingListEntryBase):
     pass

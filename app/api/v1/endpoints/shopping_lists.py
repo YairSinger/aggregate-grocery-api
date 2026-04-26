@@ -38,7 +38,8 @@ def create_shopping_list(
         db.add(ShoppingListEntry(
             shopping_list_id=shopping_list.id,
             aggregate_id=entry.aggregate_id,
-            desired_amount=entry.desired_amount
+            item_id=entry.item_id,
+            desired_amount=entry.desired_amount,
         ))
     
     db.commit()
