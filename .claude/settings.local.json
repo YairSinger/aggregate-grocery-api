@@ -57,7 +57,16 @@
       "Bash(lsof -i :3000 -sTCP:LISTEN -t)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/)",
       "Bash(npx tsc *)",
-      "Bash(./node_modules/.bin/tsc --noEmit)"
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(git -C /Users/yair/git/groceries-by-agregates status)",
+      "Bash(git -C /Users/yair/git/groceries-by-agregates/ui-aggregators-worktree log --oneline -5)",
+      "Bash(git -C /Users/yair/git/groceries-by-agregates diff main..ui-aggregators --stat)",
+      "Bash(git -C /Users/yair/git/groceries-by-agregates/ui-aggregators-worktree diff main..HEAD --stat)",
+      "Bash(git -C /Users/yair/git/groceries-by-agregates worktree remove ui-aggregators-worktree)",
+      "Bash(rm -rf /Users/yair/git/groceries-by-agregates/ui-aggregators-worktree)",
+      "Bash(git -C /Users/yair/git/groceries-by-agregates worktree remove --force ui-aggregators-worktree)",
+      "Bash(git -C /Users/yair/git/groceries-by-agregates worktree prune)",
+      "Bash(git -C /Users/yair/git/groceries-by-agregates worktree list)"
     ]
   }
 }

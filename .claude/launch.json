@@ -4,8 +4,9 @@
     {
       "name": "frontend",
       "runtimeExecutable": "docker",
-      "runtimeArgs": ["compose", "up", "frontend"],
-      "port": 3000
+      "runtimeArgs": ["start", "-a", "grocery_frontend"],
+      "port": 3000,
+      "autoPort": false
     },
     {
       "name": "backend",
