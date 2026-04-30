@@ -41,10 +41,26 @@ interface ShoppingList {
 interface ItemResult {
   aggregate_id: string;
   aggregate_name: string;
+  item_id: string;
   item_name: string;
+  brand: string;
+  unit_of_measure: string;
+  package_quantity: number;
   price_per_unit: number;
   desired_amount: number;
   cost: number;
+}
+
+function formatUnitSize(qty: number, unit: string): string {
+  if (unit === 'MASS') {
+    if (qty >= 1000) return `${(qty / 1000).toFixed(qty % 1000 === 0 ? 0 : 1)} ק"ג`;
+    return `${qty} ג'`;
+  }
+  if (unit === 'VOLUME') {
+    if (qty >= 1) return `${qty} ל'`;
+    return `${(qty * 1000).toFixed(0)} מ"ל`;
+  }
+  return qty > 1 ? `${qty} יח׳` : '';
 }
 
 interface StoreResult {
@@ -485,28 +501,39 @@ export default function CartOptimizer({ email }: { email: string }) {
                   </div>
                   <span style={{ fontWeight: 600, color: 'var(--primary)' }}>₪{Number(store.total_cost).toFixed(2)}</span>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--card-bg)' }}>
-                      <th style={{ padding: '0.5rem 1rem', textAlign: 'right', color: 'var(--secondary)', fontWeight: 600 }}>פריט</th>
-                      <th style={{ padding: '0.5rem 1rem', textAlign: 'right', color: 'var(--secondary)', fontWeight: 600 }}>מוצר זול ביותר</th>
-                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600 }}>מחיר ליח׳</th>
-                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600 }}>כמות</th>
-                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600 }}>עלות</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {store.items.map(item => (
-                      <tr key={item.aggregate_id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '0.55rem 1rem', fontWeight: 500 }}>{item.aggregate_name}</td>
-                        <td style={{ padding: '0.55rem 1rem', color: 'var(--secondary)' }}>{item.item_name}</td>
-                        <td style={{ padding: '0.55rem 1rem', textAlign: 'center' }}>₪{item.price_per_unit.toFixed(2)}</td>
-                        <td style={{ padding: '0.55rem 1rem', textAlign: 'center' }}>{item.desired_amount}</td>
-                        <td style={{ padding: '0.55rem 1rem', textAlign: 'center', fontWeight: 600, color: 'var(--primary)' }}>₪{item.cost.toFixed(2)}</td>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', minWidth: '640px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--card-bg)' }}>
+                        <th style={{ padding: '0.55rem 1rem', textAlign: 'right', color: 'var(--secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>קבוצה</th>
+                        <th style={{ padding: '0.55rem 1rem', textAlign: 'right', color: 'var(--secondary)', fontWeight: 600 }}>שם מוצר</th>
+                        <th style={{ padding: '0.55rem 1rem', textAlign: 'right', color: 'var(--secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>יצרן</th>
+                        <th style={{ padding: '0.55rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>גודל</th>
+                        <th style={{ padding: '0.55rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>מחיר/יח׳</th>
+                        <th style={{ padding: '0.55rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>יח׳</th>
+                        <th style={{ padding: '0.55rem 1rem', textAlign: 'center', color: 'var(--secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>עלות</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {store.items.map((item, idx) => (
+                        <tr key={item.aggregate_id} style={{
+                          borderBottom: '1px solid var(--border)',
+                          background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.015)',
+                        }}>
+                          <td style={{ padding: '0.6rem 1rem', fontWeight: 600, whiteSpace: 'nowrap' }}>{item.aggregate_name}</td>
+                          <td style={{ padding: '0.6rem 1rem', color: 'var(--foreground)' }}>{item.item_name}</td>
+                          <td style={{ padding: '0.6rem 1rem', color: 'var(--secondary)', whiteSpace: 'nowrap' }}>{item.brand || '—'}</td>
+                          <td style={{ padding: '0.6rem 1rem', textAlign: 'center', color: 'var(--secondary)', whiteSpace: 'nowrap' }}>
+                            {formatUnitSize(item.package_quantity, item.unit_of_measure)}
+                          </td>
+                          <td style={{ padding: '0.6rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>₪{item.price_per_unit.toFixed(2)}</td>
+                          <td style={{ padding: '0.6rem 1rem', textAlign: 'center' }}>{item.desired_amount}</td>
+                          <td style={{ padding: '0.6rem 1rem', textAlign: 'center', fontWeight: 700, color: 'var(--primary)', whiteSpace: 'nowrap' }}>₪{item.cost.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ))}
           </div>

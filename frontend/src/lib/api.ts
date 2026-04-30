@@ -23,7 +23,10 @@ export const fetchApi = async (endpoint: string, options: ApiOptions = {}) => {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail || response.statusText);
+    const detail = Array.isArray(error.detail)
+      ? error.detail.map((e: any) => e.msg).join(', ')
+      : (error.detail || response.statusText);
+    throw new Error(detail);
   }
 
   return response.json();
