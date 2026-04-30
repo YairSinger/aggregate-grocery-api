@@ -53,12 +53,14 @@ interface ItemResult {
 
 function formatUnitSize(qty: number, unit: string): string {
   if (unit === 'MASS') {
-    if (qty >= 1000) return `${(qty / 1000).toFixed(qty % 1000 === 0 ? 0 : 1)} ק"ג`;
-    return `${qty} ג'`;
+    // DB stores in kg — convert sub-kg to grams
+    if (qty >= 1) return `${qty} ק"ג`;
+    return `${Math.round(qty * 1000)} ג'`;
   }
   if (unit === 'VOLUME') {
+    // DB stores in litres — convert sub-litre to ml
     if (qty >= 1) return `${qty} ל'`;
-    return `${(qty * 1000).toFixed(0)} מ"ל`;
+    return `${Math.round(qty * 1000)} מ"ל`;
   }
   return qty > 1 ? `${qty} יח׳` : '';
 }
