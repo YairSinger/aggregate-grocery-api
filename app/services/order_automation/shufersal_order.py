@@ -182,17 +182,18 @@ def _clear_existing_cart(page: Page) -> None:
 
 def _add_item_to_cart(page: Page, item: AssignedItem) -> bool:
     """
-    Add item to cart by item_code (barcode search).
-    Falls back to item_name search if barcode returns no results.
+    Add item to cart. Tries barcode first (item_code = EAN/GTIN),
+    falls back to item_name if barcode search returns no results.
+    Barcode search is preferred — exact match, immune to Hebrew text issues.
     Returns True if successfully added.
     """
-    for query in [item.item_name, _extract_barcode(item)]:
+    for query in [item.item_code, item.item_name]:
         if not query:
             continue
         try:
-            # Navigate to search
+            # TODO: verify search URL pattern against live shufersal.co.il
             page.goto(
-                f"{_SHUFERSAL_HOME}/he/search-results/query/{_url_encode(query)}",
+                f"{_SHUFERSAL_HOME}/online/he/search?term={_url_encode(query)}",
                 timeout=30_000,
             )
             page.wait_for_load_state("networkidle")
@@ -298,13 +299,6 @@ def _save_checkout_screenshot(page: Page) -> Optional[str]:
 
 # ---------------------------------------------------------------------------
 # Utilities
-
-def _extract_barcode(item: AssignedItem) -> Optional[str]:
-    """item_id is the DB UUID, not a barcode. Barcode lives in Item.item_code.
-    AssignedItem doesn't carry item_code yet — add it when needed.
-    TODO: add item_code to AssignedItem and use it here for more reliable search."""
-    return None
-
 
 def _url_encode(text: str) -> str:
     from urllib.parse import quote

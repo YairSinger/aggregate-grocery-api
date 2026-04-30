@@ -144,6 +144,7 @@ def _score_store(
             name=w.name,
             aggregate_id=w.aggregate_id,
             item_id=best_candidate.item_id,
+            item_code=best_candidate.item_code,
             item_name=best_candidate.item_name,
             brand=best_candidate.brand,
             unit_of_measure=best_candidate.unit_of_measure,

@@ -19,6 +19,7 @@ from uuid import UUID
 @dataclass
 class CandidatePrice:
     item_id: UUID
+    item_code: str            # EAN/GTIN barcode — used for reliable site search
     item_name: str
     brand: str
     unit_of_measure: str      # "MASS" / "VOLUME" / "UNITS"
@@ -45,6 +46,7 @@ class AssignedItem:
     name: str
     aggregate_id: Optional[UUID]
     item_id: UUID
+    item_code: str              # EAN/GTIN barcode — for order automation search
     item_name: str
     brand: str
     unit_of_measure: str        # "MASS" / "VOLUME" / "UNITS"
