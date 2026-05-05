@@ -2,11 +2,13 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Enum as SAEnum,
     Float,
     ForeignKey,
+    Integer,
     Numeric,
     String,
     Text,
@@ -133,3 +135,116 @@ class ShoppingListEntry(Base):
     shopping_list = relationship("ShoppingList", back_populates="entries")
     aggregate = relationship("Aggregate")
     item = relationship("Item")
+
+
+# ---------------------------------------------------------------------------
+# Agent ordering models
+# ---------------------------------------------------------------------------
+
+class PendingItemStatus(str, Enum):
+    PENDING = "pending"    # waiting to be included in next order
+    ORDERED = "ordered"    # included in a placed order
+    SKIPPED = "skipped"    # user chose to skip this week
+
+
+class PendingItem(Base):
+    """
+    Free-text items added by the home monitoring agent during the week.
+    Accumulates until Monday evening when the agent runs optimization.
+    Agent maps item_name → aggregate via LLM; aggregate_id stored once matched.
+    """
+    __tablename__ = "pending_items"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    item_name = Column(String, nullable=False)       # free text from agent ("milk", "tahini")
+    qty = Column(Float, nullable=False, default=1.0)
+    unit = Column(String, nullable=False, default="UNITS")  # "MASS"/"VOLUME"/"UNITS"
+    aggregate_id = Column(UUID(as_uuid=True), ForeignKey("aggregates.id"), nullable=True)
+    status = Column(SAEnum(PendingItemStatus), nullable=False, default=PendingItemStatus.PENDING)
+    added_at = Column(DateTime, default=datetime.utcnow)
+    order_id = Column(UUID(as_uuid=True), ForeignKey("orders.id"), nullable=True)
+
+    user = relationship("User")
+    aggregate = relationship("Aggregate")
+
+
+class OrderStatus(str, Enum):
+    PENDING = "pending"                    # optimization done, cart not built yet
+    CART_BUILDING = "cart_building"        # browser automation running
+    AWAITING_CONFIRMATION = "awaiting_confirmation"  # cart built, link sent to user
+    PLACED = "placed"                      # user provided confirmation number
+    FAILED = "failed"                      # automation failed
+
+
+class Order(Base):
+    """
+    Represents one shopping run — from optimization result through to placement.
+    Created when the agent calls confirm_order() or build_cart().
+    Delivery details are denormalised here for simplicity (v1).
+    """
+    __tablename__ = "orders"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    store_id = Column(UUID(as_uuid=True), ForeignKey("stores.id"), nullable=True)
+
+    # Denormalised for display / history even if store changes
+    store_name = Column(String, nullable=False)
+    chain_name = Column(String, nullable=False)
+
+    total_cost = Column(Numeric(precision=10, scale=2), nullable=False)
+    baseline_cost = Column(Numeric(precision=10, scale=2), nullable=True)  # from HistoricalPurchase
+
+    # Delivery window (as chosen by agent from calendar)
+    delivery_window_start = Column(String, nullable=True)   # e.g. "18:00"
+    delivery_window_end = Column(String, nullable=True)     # e.g. "21:00"
+    delivery_date = Column(String, nullable=True)           # human-readable from Shufersal slot
+
+    # Phase 1 result
+    cart_url = Column(Text, nullable=True)                  # sent to user via Telegram
+    cart_screenshot_path = Column(Text, nullable=True)      # /tmp/browser_debug/…
+
+    # Phase 2 result (user-provided)
+    confirmation_number = Column(String, nullable=True)
+
+    status = Column(SAEnum(OrderStatus), nullable=False, default=OrderStatus.PENDING)
+    error_message = Column(Text, nullable=True)             # populated on FAILED
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    placed_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")
+    store = relationship("Store")
+    items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+
+
+class OrderItem(Base):
+    """
+    Line item in an Order. Denormalised so order history is self-contained
+    even if the item is delisted or prices change.
+    """
+    __tablename__ = "order_items"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id = Column(UUID(as_uuid=True), ForeignKey("orders.id"), nullable=False)
+
+    # Catalogue references (nullable — item may be delisted later)
+    item_id = Column(UUID(as_uuid=True), ForeignKey("items.id"), nullable=True)
+    aggregate_id = Column(UUID(as_uuid=True), ForeignKey("aggregates.id"), nullable=True)
+
+    # Denormalised snapshot at order time
+    item_code = Column(String, nullable=False)
+    item_name = Column(String, nullable=False)
+    aggregate_name = Column(String, nullable=True)
+    brand = Column(String, nullable=True)
+    unit_of_measure = Column(String, nullable=True)
+    package_quantity = Column(Float, nullable=True)
+
+    qty_packages = Column(Integer, nullable=False)           # packages ordered
+    unit_price = Column(Numeric(precision=10, scale=2), nullable=False)  # per package
+    cost = Column(Numeric(precision=10, scale=2), nullable=False)
+
+    order = relationship("Order", back_populates="items")
+    item = relationship("Item")
+    aggregate = relationship("Aggregate")
