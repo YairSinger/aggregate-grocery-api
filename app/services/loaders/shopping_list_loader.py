@@ -67,6 +67,7 @@ def load_wanted_items(
             Aggregate.unit_of_measure,
             Item.id.label("item_id"),
             Item.name.label("item_name"),
+            Item.item_code.label("item_code"),
             Item.brand.label("brand"),
             Item.unit_of_measure.label("item_unit"),
             Item.quantity.label("pkg_qty"),
@@ -110,6 +111,7 @@ def load_wanted_items(
             ShoppingListEntry.desired_amount,
             Item.id.label("item_id"),
             Item.name.label("item_name"),
+            Item.item_code.label("item_code"),
             Item.brand.label("brand"),
             Item.unit_of_measure.label("item_unit"),
             Item.quantity.label("pkg_qty"),
@@ -188,6 +190,7 @@ def _make_candidate(row) -> CandidatePrice:
     pkg_qty = float(row.pkg_qty) if row.pkg_qty and row.pkg_qty > 0 else 1.0
     return CandidatePrice(
         item_id=row.item_id,
+        item_code=row.item_code or "",
         item_name=row.item_name,
         brand=row.brand or "",
         unit_of_measure=row.item_unit.value if row.item_unit else "UNITS",
