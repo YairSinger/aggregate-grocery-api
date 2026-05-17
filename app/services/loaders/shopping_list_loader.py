@@ -15,7 +15,7 @@ from uuid import UUID
 
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -88,7 +88,7 @@ def load_wanted_items(
         .filter(
             ShoppingListEntry.shopping_list_id == shopping_list_id,
             ShoppingListEntry.aggregate_id.isnot(None),
-            func.ST_DWithin(Store.location, user_point, max_dist_m),
+            or_(Store.location.is_(None), func.ST_DWithin(Store.location, user_point, max_dist_m),),
         )
         .all()
     )
@@ -130,7 +130,7 @@ def load_wanted_items(
         .filter(
             ShoppingListEntry.shopping_list_id == shopping_list_id,
             ShoppingListEntry.item_id.isnot(None),
-            func.ST_DWithin(Store.location, user_point, max_dist_m),
+            or_(Store.location.is_(None), func.ST_DWithin(Store.location, user_point, max_dist_m),),
         )
         .all()
     )
